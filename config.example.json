@@ -1,0 +1,37 @@
+{
+  "provider": "ollama",
+  "model": "qwen2.5-coder:7b",
+  "auto_execute_safe": false,
+  "show_explanation": true,
+  "interactive_mode": true,
+  "timeout": 60,
+  "ollama": {
+    "host": "http://localhost:11434",
+    "model": "qwen2.5-coder:7b"
+  },
+  "local": {
+    "endpoint": "http://localhost:8080/v1",
+    "api_key": "sk-local",
+    "model": "default"
+  },
+  "openai": {
+    "api_key": "sk-proj-...",
+    "model": "gpt-4o-mini"
+  },
+  "anthropic": {
+    "api_key": "sk-ant-...",
+    "model": "claude-3-5-sonnet-20241022"
+  },
+  "gemini": {
+    "api_key": "AIzaSy...",
+    "model": "gemini-1.5-flash"
+  },
+  "groq": {
+    "api_key": "gsk_...",
+    "model": "llama-3.3-70b-versatile"
+  },
+  "openrouter": {
+    "api_key": "sk-or-...",
+    "model": "meta-llama/llama-3.3-70b-instruct"
+  }
+}

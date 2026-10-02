@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "linux-terminal-agent"
+version = "1.0.0"
+description = "Natural Language to Linux Terminal Automation with Modular AI Backends"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "nimajavan" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: Console",
+]
+
+[project.scripts]
+lta = "terminal_agent.cli:main"
+terminal-agent = "terminal_agent.cli:main"
