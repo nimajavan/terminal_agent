@@ -48,7 +48,7 @@ class SystemContext:
         )
 
 
-def _detect_distro() -> tuple[str, str]:
+def _detect_distro():
     """Parse /etc/os-release or fallback to platform.system."""
     distro_name = platform.system()
     distro_version = platform.release()
@@ -100,7 +100,7 @@ def _detect_shell() -> str:
 
 def _check_can_sudo() -> bool:
     """Check if current user can run sudo without hanging."""
-    if os.geteuid() == 0:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
         return True
     try:
         res = subprocess.run(

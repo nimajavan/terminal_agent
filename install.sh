@@ -29,6 +29,10 @@ if ! command -v python3 &>/dev/null; then
 fi
 
 PY_VER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)'; then
+    echo "Python 3.8 or newer is required."
+    exit 1
+fi
 echo -e "${GREEN}✔ Detected Python ${PY_VER}${NC}"
 
 # 2. Determine installation target

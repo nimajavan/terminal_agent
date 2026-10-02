@@ -7,6 +7,7 @@ Zero third-party dependencies (pure standard library urllib).
 import json
 import urllib.request
 import urllib.error
+from terminal_agent.providers.transport import local_open
 from typing import List, Dict, Tuple, Optional, Any
 from terminal_agent.providers.base import BaseProvider, AgentResponse, parse_llm_json_response
 from terminal_agent.core.context import SystemContext
@@ -33,7 +34,7 @@ class OllamaProvider(BaseProvider):
                 [f"- Query: {h.get('user_intent')} -> Cmd: {h.get('command')} ({h.get('status')})" for h in history]
             )
 
-        full_prompt = f"{system_prompt}\n{history_text}\n\nUser request: {prompt}\n\nRespond strictly with JSON containing 'command' and 'explanation'."
+        full_prompt = f"{system_prompt}\n{history_text}\n\nUser request: {prompt}\n\n{self.response_instruction()}"
 
         payload = {
             "model": self.model,
@@ -42,6 +43,7 @@ class OllamaProvider(BaseProvider):
             "format": "json",
             "options": {
                 "temperature": 0.1,
+                "num_predict": self.config.get("max_output_tokens", 2048),
                 "top_p": 0.9,
             }
         }
@@ -53,8 +55,9 @@ class OllamaProvider(BaseProvider):
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+            with local_open(req, timeout=self.timeout) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
+                self.record_usage(res_data)
                 raw_response = res_data.get("response", "")
                 cmd, exp = parse_llm_json_response(raw_response)
                 return AgentResponse(
@@ -77,7 +80,7 @@ class OllamaProvider(BaseProvider):
         """Test if Ollama server is accessible and list models."""
         try:
             req = urllib.request.Request(f"{self.host}/api/tags", headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with local_open(req, timeout=5) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 models = [m.get("name") for m in data.get("models", [])]
                 if self.model in models or any(m.startswith(self.model) for m in models):
@@ -93,7 +96,7 @@ class OllamaProvider(BaseProvider):
     def get_available_models(self) -> List[str]:
         try:
             req = urllib.request.Request(f"{self.host}/api/tags", headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=4) as response:
+            with local_open(req, timeout=4) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 return [m.get("name") for m in data.get("models", []) if "name" in m]
         except Exception:

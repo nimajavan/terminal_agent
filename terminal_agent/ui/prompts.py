@@ -9,6 +9,7 @@ from terminal_agent.ui.colors import (
     badge_safe, badge_caution, badge_danger, badge_critical
 )
 from terminal_agent.core.safety import DangerLevel, SafetyAssessment
+from terminal_agent.core.privacy import terminal_text
 
 def render_command_card(
     command: str,
@@ -21,9 +22,9 @@ def render_command_card(
     border = gray("─" * 60)
     print()
     print(border)
-    print(f" {bold('Command:')}     {cyan(bold(command))}")
+    print(f" {bold('Command:')}     {cyan(bold(terminal_text(command)))}")
     if explanation:
-        print(f" {bold('Summary:')}     {explanation}")
+        print(f" {bold('Summary:')}     {terminal_text(explanation)}")
 
     # Safety badge
     badge_map = {
@@ -69,9 +70,9 @@ def prompt_user_action(
             print("\nAborted.")
             return "quit", command
 
-        if choice in ["y", "yes", ""]:
+        if choice in ["y", "yes"]:
             return "run", command
-        elif choice in ["n", "no"]:
+        elif choice in ["n", "no", ""]:
             return "skip", command
         elif choice in ["q", "quit"]:
             return "quit", command

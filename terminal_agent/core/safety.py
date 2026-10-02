@@ -5,6 +5,9 @@ data loss, privilege escalation vulnerabilities, or bricking.
 """
 
 import re
+import shlex
+import posixpath
+import os
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Tuple
@@ -59,17 +62,6 @@ CAUTION_PATTERNS: List[Tuple[str, str]] = [
     (r">\s*[^\s]+", "Redirect overwrite (truncating target file)"),
 ]
 
-# Safe read-only inspection commands
-SAFE_READONLY_PREFIXES = (
-    "ls", "cat", "head", "tail", "less", "more", "grep", "rg", "awk", "sed -n",
-    "find", "stat", "file", "du", "df", "free", "uname", "uptime", "ps", "top", "htop",
-    "ip", "ifconfig", "ss", "netstat", "lsof", "whoami", "id", "groups", "date",
-    "echo", "pwd", "which", "whereis", "type", "ping -c", "dig", "nslookup",
-    "git status", "git log", "git diff", "git branch", "systemctl status", "journalctl",
-    "env", "printenv", "wc", "sort", "uniq", "tree", "dmesg"
-)
-
-
 def analyze_command(command: str) -> SafetyAssessment:
     """Analyze a shell command for dangerous operations."""
     cleaned = command.strip()
@@ -82,6 +74,25 @@ def analyze_command(command: str) -> SafetyAssessment:
         )
 
     reasons: List[str] = []
+
+    try:
+        lexer = shlex.shlex(cleaned, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        words = list(lexer)
+    except ValueError:
+        return SafetyAssessment(DangerLevel.BLOCKED, ["Malformed shell quoting"], True, False)
+    if any(ord(c) < 32 and c not in "\n\t" for c in cleaned):
+        return SafetyAssessment(DangerLevel.BLOCKED, ["Control characters in command"], True, False)
+    if "[REDACTED" in cleaned:
+        return SafetyAssessment(DangerLevel.BLOCKED, ["Command contains removed secrets; enter values locally"], True, False)
+    # Normalize rm options instead of depending on their order or spelling.
+    for index, word in enumerate(words):
+        if word.rsplit("/", 1)[-1] == "rm":
+            args = words[index + 1:]
+            recursive = any(a == "--recursive" or (a.startswith("-") and not a.startswith("--") and "r" in a.lower()) for a in args)
+            if recursive and any(a in {"~", "$HOME", "${HOME}", "/*", os.path.expanduser("~")} or (a.startswith("/") and posixpath.normpath(a) == "/") for a in args if not a.startswith("-")):
+                return SafetyAssessment(DangerLevel.BLOCKED, ["Recursive deletion of root/home is blocked"], True, False)
 
     # 1. Check blocked patterns
     for pattern, desc in BLOCKED_PATTERNS:
@@ -121,21 +132,26 @@ def analyze_command(command: str) -> SafetyAssessment:
             requires_confirmation=True
         )
 
-    # 4. Check if it matches safe read-only prefixes
-    cmd_parts = cleaned.split("&&")[0].split(";")[0].split("|")[0].strip()
-    for prefix in SAFE_READONLY_PREFIXES:
-        if cmd_parts == prefix or cmd_parts.startswith(prefix + " "):
-            return SafetyAssessment(
-                level=DangerLevel.SAFE,
-                reasons=["Read-only / informational command"],
-                is_blocked=False,
-                requires_confirmation=False
-            )
-
-    # Default: SAFE with confirmation for unknown commands
+    # Only a deliberately small, reviewed set can bypass confirmation.
+    # Shell composition and expansion are never inferred safe from the first word.
+    complex_shell = any(c in cleaned for c in "\n;|&<>`$(){}")
+    readonly = False
+    if words and not complex_shell:
+        binary, args = words[0], words[1:]
+        readonly = binary in {"ls", "cat", "head", "tail", "stat", "du", "df", "free", "uname", "uptime", "ps", "whoami", "id", "groups", "pwd", "wc", "lscpu"}
+        if binary == "ss":
+            readonly = not any(a == "--kill" or (a.startswith("-") and not a.startswith("--") and "K" in a) for a in args)
+        if binary in {"grep", "rg"}:
+            readonly = not any(a.startswith(("--pre", "--hostname-bin")) for a in args)
+        if binary == "systemctl":
+            readonly = bool(args) and args[0] in {"status", "show", "is-active", "is-enabled", "list-units", "list-unit-files"}
+        if binary == "ip":
+            readonly = args in [["a"], ["addr"], ["addr", "show"], ["-brief", "addr", "show"], ["route", "show"], ["link", "show"]]
+        # Access to secret stores always needs human review.
+        if re.search(r"(?i)(\.env\b|\.ssh|\.aws|\.netrc|/shadow\b|credentials|private.key)", cleaned):
+            readonly = False
     return SafetyAssessment(
-        level=DangerLevel.SAFE,
-        reasons=["Standard non-destructive command"],
-        is_blocked=False,
-        requires_confirmation=False
+        DangerLevel.SAFE if readonly else DangerLevel.CAUTION,
+        ["Recognized inspection command" if readonly else "Mutation, shell composition, or unknown command requires review"],
+        False, not readonly,
     )

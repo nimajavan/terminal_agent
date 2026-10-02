@@ -188,7 +188,7 @@ class RuleBasedProvider(BaseProvider):
 
         # Generic fallback
         return AgentResponse(
-            command=f"# Echo request: {prompt}",
+            command="",
             explanation="Prompt could not be matched by offline rule parser. Configure an AI provider (Ollama or API key) for complex reasoning.",
             provider_name=self.name,
             model_name=self.model,

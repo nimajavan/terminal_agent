@@ -1,5 +1,6 @@
 """Unit tests for context detection and executor."""
 import unittest
+import sys
 from terminal_agent.core.context import get_system_context
 from terminal_agent.core.executor import CommandExecutor
 
@@ -14,7 +15,7 @@ class TestContextAndExecutor(unittest.TestCase):
 
     def test_executor_success(self):
         executor = CommandExecutor(default_timeout=10)
-        res = executor.execute("echo 'lta_test'")
+        res = executor.execute([sys.executable, "-c", "print('lta_test')"])
         self.assertTrue(res.succeeded)
         self.assertEqual(res.exit_code, 0)
         self.assertIn("lta_test", res.stdout)

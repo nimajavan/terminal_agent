@@ -1,0 +1,19 @@
+{
+  "name": "config-repair",
+  "description": "Demonstrate reviewed config repair, verification and rollback in a demo project",
+  "plan": {
+    "goal": "Set the demo application's health flag",
+    "summary": "Requires a demo app.conf file. Replaces its contents after showing a diff.",
+    "steps": [
+      {"id": "inspect", "title": "Inspect demo configuration", "tool": "read_file", "args": {"path": "app.conf"}},
+      {
+        "id": "repair",
+        "title": "Replace demo configuration",
+        "tool": "write_file",
+        "args": {"path": "app.conf", "content": "healthy=true\n"},
+        "depends_on": ["inspect"],
+        "verify": [{"tool": "read_file", "args": {"path": "app.conf"}, "contains": "healthy=true"}]
+      }
+    ]
+  }
+}

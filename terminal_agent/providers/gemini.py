@@ -37,13 +37,14 @@ class GeminiProvider(BaseProvider):
                 contents.append({"role": "user", "parts": [{"text": h.get("user_intent", "")}]})
                 contents.append({"role": "model", "parts": [{"text": json.dumps({"command": h.get("command", ""), "explanation": "Done."})}]})
 
-        contents.append({"role": "user", "parts": [{"text": f"{prompt}\n\nRespond strictly with JSON containing 'command' and 'explanation'."}]})
+        contents.append({"role": "user", "parts": [{"text": f"{prompt}\n\n{self.response_instruction()}"}]})
 
         payload = {
             "system_instruction": {"parts": [{"text": system_instruction}]},
             "contents": contents,
             "generationConfig": {
                 "temperature": 0.1,
+                "maxOutputTokens": self.config.get("max_output_tokens", 2048),
                 "response_mime_type": "application/json"
             }
         }
@@ -58,6 +59,7 @@ class GeminiProvider(BaseProvider):
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
+                self.record_usage(res_data)
                 candidates = res_data.get("candidates", [])
                 if not candidates:
                     raise ValueError("No response returned from Gemini API.")

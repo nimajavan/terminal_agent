@@ -7,6 +7,7 @@ Zero third-party dependencies (pure standard library urllib).
 import json
 import urllib.request
 import urllib.error
+from terminal_agent.providers.transport import local_open
 from typing import List, Dict, Tuple, Optional, Any
 from terminal_agent.providers.base import BaseProvider, AgentResponse, parse_llm_json_response
 from terminal_agent.core.context import SystemContext
@@ -35,12 +36,13 @@ class LocalServerProvider(BaseProvider):
                 messages.append({"role": "user", "content": h.get("user_intent", "")})
                 messages.append({"role": "assistant", "content": json.dumps({"command": h.get("command", ""), "explanation": "Done."})})
 
-        messages.append({"role": "user", "content": f"{prompt}\n\nRespond strictly with JSON format: {{\"command\": \"...\", \"explanation\": \"...\"}}"})
+        messages.append({"role": "user", "content": f"{prompt}\n\n{self.response_instruction()}"})
 
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": 0.1,
+            "max_tokens": self.config.get("max_output_tokens", 2048),
             "stream": False
         }
 
@@ -55,8 +57,9 @@ class LocalServerProvider(BaseProvider):
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+            with local_open(req, timeout=self.timeout) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
+                self.record_usage(res_data)
                 choices = res_data.get("choices", [])
                 if not choices:
                     raise ValueError("No response choices returned by local server.")
@@ -83,7 +86,7 @@ class LocalServerProvider(BaseProvider):
         url = f"{self.endpoint}/models"
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.api_key}"})
         try:
-            with urllib.request.urlopen(req, timeout=4) as response:
+            with local_open(req, timeout=4) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 models = [m.get("id") for m in data.get("data", []) if "id" in m]
                 return True, f"Connected to local server at {self.endpoint}. Models found: {', '.join(models[:3]) or 'Ready'}"

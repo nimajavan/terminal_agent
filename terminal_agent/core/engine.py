@@ -14,6 +14,8 @@ from terminal_agent.providers.base import BaseProvider, AgentResponse
 from terminal_agent.providers.factory import get_provider
 from terminal_agent.ui.prompts import render_command_card, prompt_user_action
 from terminal_agent.ui.colors import green, red, yellow, bold, dim, cyan
+from terminal_agent.providers.router import ModelRouter
+from terminal_agent.core.privacy import redact, terminal_text
 
 class TerminalAgentEngine:
     def __init__(
@@ -30,6 +32,7 @@ class TerminalAgentEngine:
         self.context: SystemContext = get_system_context()
         self.history = HistoryManager()
         self.executor = CommandExecutor(default_timeout=self.config.get("timeout", 120))
+        self.router = ModelRouter(self.provider, self.config)
 
     def process_prompt(self, prompt: str) -> Tuple[Optional[ExecutionResult], Optional[AgentResponse]]:
         """Process a single natural language prompt and manage lifecycle."""
@@ -39,21 +42,14 @@ class TerminalAgentEngine:
         # 1. Ask provider to generate command
         history_context = self.history.get_context_for_prompt(limit=4)
         try:
-            response = self.provider.generate(
+            response = self.router.generate(
                 prompt=prompt,
                 context=self.context,
                 history=history_context
             )
         except Exception as e:
-            print(red(f"\n✖ Model generation error: {str(e)}"))
-            # Attempt fallback to rule_based if not already
-            if self.provider.name != "rule_based":
-                print(yellow("⚡ Falling back to offline rule-based parser..."))
-                from terminal_agent.providers.rule_based import RuleBasedProvider
-                fallback_provider = RuleBasedProvider()
-                response = fallback_provider.generate(prompt=prompt, context=self.context)
-            else:
-                return None, None
+            print(red("\nModel generation error: " + terminal_text(e)))
+            return None, None
 
         command = response.clean_command()
         if not command:
@@ -68,8 +64,8 @@ class TerminalAgentEngine:
             command=command,
             explanation=response.explanation,
             assessment=assessment,
-            provider_name=self.provider.name,
-            model_name=self.provider.model
+            provider_name=response.provider_name,
+            model_name=response.model_name
         )
 
         # 4. Dry-run handling
@@ -106,7 +102,7 @@ class TerminalAgentEngine:
             action, final_cmd = prompt_user_action(command, is_blocked=assessment.is_blocked)
         else:
             # If auto-yes is active, still warn on DANGEROUS commands
-            if assessment.level == DangerLevel.DANGEROUS:
+            if assessment.requires_confirmation:
                 print(yellow("\n⚠ Command is categorized as DANGEROUS. Confirming even in auto-mode..."))
                 action, final_cmd = prompt_user_action(command, is_blocked=assessment.is_blocked)
 
@@ -126,9 +122,23 @@ class TerminalAgentEngine:
             )
             return None, response
 
+        # Editing never bypasses policy or approval of the newly proposed command.
+        while final_cmd != command:
+            command = final_cmd
+            assessment = analyze_command(command)
+            render_command_card(command, "Edited command", assessment, response.provider_name, response.model_name)
+            if assessment.is_blocked:
+                print(red("Edited command is blocked."))
+                return None, response
+            action, final_cmd = prompt_user_action(command, is_blocked=False)
+            if action != "run":
+                return None, response
+
         # 7. Execute command
-        print(f"\n{bold('Executing:')} {cyan(final_cmd)}\n")
+        print(f"\n{bold('Executing:')} {cyan(terminal_text(final_cmd))}\n")
         result = self.executor.execute_interactive(final_cmd)
+        if result.stderr:
+            print(red(terminal_text(result.stderr)))
 
         # 8. Record in history
         self.history.add(
@@ -137,7 +147,7 @@ class TerminalAgentEngine:
             explanation=response.explanation,
             executed=True,
             exit_code=result.exit_code,
-            provider=self.provider.name
+            provider=response.provider_name
         )
 
         if result.exit_code == 0:
@@ -145,4 +155,5 @@ class TerminalAgentEngine:
         else:
             print(red(f"\n✖ Command exited with status code {result.exit_code}"))
 
+        print(self.router.summary())
         return result, response

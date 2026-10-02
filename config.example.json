@@ -1,6 +1,6 @@
 {
   "provider": "ollama",
-  "model": "qwen2.5-coder:7b",
+  "model": "",
   "auto_execute_safe": false,
   "show_explanation": true,
   "interactive_mode": true,
@@ -15,23 +15,30 @@
     "model": "default"
   },
   "openai": {
-    "api_key": "sk-proj-...",
+    "api_key": "",
     "model": "gpt-4o-mini"
   },
   "anthropic": {
-    "api_key": "sk-ant-...",
+    "api_key": "",
     "model": "claude-3-5-sonnet-20241022"
   },
   "gemini": {
-    "api_key": "AIzaSy...",
+    "api_key": "",
     "model": "gemini-1.5-flash"
   },
   "groq": {
-    "api_key": "gsk_...",
+    "api_key": "",
     "model": "llama-3.3-70b-versatile"
   },
   "openrouter": {
-    "api_key": "sk-or-...",
+    "api_key": "",
     "model": "meta-llama/llama-3.3-70b-instruct"
-  }
+  },
+  "local_only": false,
+  "route_simple": true,
+  "max_steps": 12,
+  "max_model_calls": 20,
+  "max_output_tokens": 2048,
+  "budget_usd": null,
+  "pricing": {}
 }

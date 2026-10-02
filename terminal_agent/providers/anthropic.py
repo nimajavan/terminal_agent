@@ -38,13 +38,13 @@ class AnthropicProvider(BaseProvider):
                 messages.append({"role": "user", "content": h.get("user_intent", "")})
                 messages.append({"role": "assistant", "content": json.dumps({"command": h.get("command", ""), "explanation": "Done."})})
 
-        messages.append({"role": "user", "content": f"{prompt}\n\nRespond strictly with JSON format: {{\"command\": \"...\", \"explanation\": \"...\"}}"})
+        messages.append({"role": "user", "content": f"{prompt}\n\n{self.response_instruction()}"})
 
         payload = {
             "model": self.model,
             "system": system_prompt,
             "messages": messages,
-            "max_tokens": 1024,
+            "max_tokens": self.config.get("max_output_tokens", 2048),
             "temperature": 0.1
         }
 
@@ -61,6 +61,7 @@ class AnthropicProvider(BaseProvider):
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
+                self.record_usage(res_data)
                 content_blocks = res_data.get("content", [])
                 raw_text = "".join(b.get("text", "") for b in content_blocks if b.get("type") == "text")
                 cmd, exp = parse_llm_json_response(raw_text)

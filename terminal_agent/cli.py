@@ -13,11 +13,12 @@ from terminal_agent.core.context import get_system_context
 from terminal_agent.core.engine import TerminalAgentEngine
 from terminal_agent.core.history import HistoryManager
 from terminal_agent.providers.factory import get_provider, PROVIDER_REGISTRY
+from terminal_agent.core.privacy import redact, terminal_text
 from terminal_agent.ui.colors import (
     bold, cyan, green, yellow, red, dim, gray, magenta, set_color_enabled
 )
 
-VERSION = "1.0.0"
+VERSION = "2.0.0"
 
 BANNER = f"""
 {cyan(bold('  _      _____          '))}
@@ -39,7 +40,7 @@ def handle_config_command(sub_args: List[str]) -> None:
     if action == "list":
         import json
         print(bold("\n--- Current Configuration ---"))
-        print(json.dumps(cfg, indent=2))
+        print(json.dumps(redact(cfg), indent=2))
         return
 
     if action == "init":
@@ -52,8 +53,10 @@ def handle_config_command(sub_args: List[str]) -> None:
             print(red("Please specify a key. Example: lta config get provider"))
             return
         key = sub_args[1]
-        val = cfg.get(key)
-        print(f"{key} = {val}")
+        val = cfg
+        for part in key.split("."):
+            val = val.get(part) if isinstance(val, dict) else None
+        print(terminal_text(f"{key} = {redact({key: val})[key]}"))
         return
 
     if action == "set":
@@ -63,7 +66,7 @@ def handle_config_command(sub_args: List[str]) -> None:
         key = sub_args[1]
         val = sub_args[2]
         set_config_value(key, val)
-        print(green(f"Updated: {key} = {val}"))
+        print(green(f"Updated: {key}"))
         return
 
     print(red(f"Unknown config action: {action}. Use 'list', 'get', 'set', or 'init'."))
@@ -148,6 +151,9 @@ def run_interactive_repl(engine: TerminalAgentEngine) -> None:
             print("  help              Show this help")
             print("  info              Show system and provider information")
             print("  history           Show command execution history")
+            print("  agent <goal>      Plan and verify a multi-step task")
+            print("  sessions / resume Inspect or continue project work")
+            print("  cd <directory>    Change project directory")
             print("  clear             Clear terminal screen")
             print("  exit / quit       Exit interactive mode")
             print("  <any prompt>      Translate instruction into shell command and execute\n")
@@ -165,11 +171,45 @@ def run_interactive_repl(engine: TerminalAgentEngine) -> None:
             handle_history_command()
             continue
 
+        if user_input.startswith("cd "):
+            from pathlib import Path
+            destination = Path(user_input[3:].strip()).expanduser().resolve()
+            if destination.is_dir():
+                os.chdir(destination)
+                engine.context = get_system_context()
+                engine.history = HistoryManager()
+            else:
+                print(red("Directory does not exist."))
+            continue
+
+        if user_input.startswith("agent "):
+            from terminal_agent.core.workflow import AgentWorkflow
+            workflow = AgentWorkflow(engine.provider, engine.config, auto_yes=engine.auto_yes, dry_run=engine.dry_run)
+            try:
+                workflow.run(workflow.create(user_input[6:]))
+            except (ValueError, OSError, RuntimeError) as exc:
+                print(red(terminal_text(exc)))
+            continue
+
+        if user_input.lower() in {"sessions", "resume"}:
+            from terminal_agent.commands import handle_workflow_command
+            try:
+                handle_workflow_command([user_input.lower()])
+            except (ValueError, OSError, RuntimeError) as exc:
+                print(red(terminal_text(exc)))
+            continue
+
         engine.process_prompt(user_input)
         print()
 
 
-def main():
+def _main():
+    for output in (sys.stdout, sys.stderr):
+        if hasattr(output, "reconfigure"):
+            output.reconfigure(encoding="utf-8", errors="replace")
+    from terminal_agent.commands import handle_workflow_command
+    if len(sys.argv) > 1 and sys.argv[1] in {"skills", "sessions", "resume", "run-plan", "export-plan", "rollback", "doctor", "evaluate"}:
+        return handle_workflow_command(sys.argv[1:])
     # Detect subcommands if first argument matches
     subcmds = {"config", "test", "info", "history"}
     if len(sys.argv) > 1 and sys.argv[1] in subcmds:
@@ -197,23 +237,47 @@ def main():
     parser.add_argument("-y", "--yes", action="store_true", help="Auto-execute safe commands without prompting.")
     parser.add_argument("-d", "--dry-run", action="store_true", help="Formulate and display command without executing.")
     parser.add_argument("-i", "--interactive", action="store_true", help="Start interactive REPL mode.")
+    parser.add_argument("--agent", action="store_true", help="Plan, execute and verify a multi-step task.")
+    parser.add_argument("--adaptive", action="store_true", help="Review evidence and propose follow-up plans, bounded by --max-rounds.")
+    parser.add_argument("--max-rounds", type=int, default=3)
+    parser.add_argument("--local-only", action="store_true", help="Forbid cloud models; local endpoints must be loopback.")
+    parser.add_argument("--project", default=os.getcwd(), help="Project directory for file tools and isolated session storage.")
     parser.add_argument("--no-color", action="store_true", help="Disable colored terminal output.")
     parser.add_argument("-v", "--version", action="version", version=f"Linux Terminal Agent {VERSION}")
 
     args = parser.parse_args()
+    if args.adaptive and not args.agent:
+        parser.error("--adaptive requires --agent")
+    if not 1 <= args.max_rounds <= 10:
+        parser.error("--max-rounds must be between 1 and 10")
 
     if args.no_color:
         set_color_enabled(False)
 
     cfg = load_config()
+    if args.local_only:
+        cfg["local_only"] = True
+    os.chdir(args.project)
 
     user_prompt = " ".join(args.prompt).strip()
 
     provider = get_provider(
         name=args.provider or cfg.get("provider"),
-        model=args.model or cfg.get("model"),
+        model=args.model,
         config=cfg
     )
+
+    if args.agent:
+        if not user_prompt:
+            parser.error("--agent requires a task description")
+        from terminal_agent.core.workflow import AgentWorkflow
+        workflow = AgentWorkflow(provider, cfg, args.project, args.yes, args.dry_run)
+        session = workflow.create(user_prompt)
+        if args.adaptive:
+            session = workflow.run_adaptive(session, args.max_rounds)
+        else:
+            session = workflow.run(session)
+        return 0 if session["status"] in {"completed", "planned"} else 1
 
     engine = TerminalAgentEngine(
         provider=provider,
@@ -225,8 +289,20 @@ def main():
     if args.interactive or not user_prompt:
         run_interactive_repl(engine)
     else:
-        engine.process_prompt(user_prompt)
+        result, response = engine.process_prompt(user_prompt)
+        return 0 if (result and result.succeeded) or (args.dry_run and response and response.command) else 1
+
+
+def main():
+    try:
+        return _main()
+    except (ValueError, OSError, RuntimeError) as exc:
+        print(red("Error: " + terminal_text(exc)), file=sys.stderr)
+        return 1
+    except (KeyboardInterrupt, EOFError):
+        print("\nStopped. Inspect the saved session before resuming.", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -1,14 +1,12 @@
-"""
-Safe command execution and process supervision engine.
-Runs commands in subshell, captures stdout/stderr, monitors exit codes,
-and handles timeouts gracefully.
-"""
-
+"""Bounded process supervision. Shell execution deliberately requires Linux."""
 import os
+import signal
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
-from typing import Optional, Generator
+from terminal_agent.core.privacy import terminal_text
+
 
 @dataclass
 class ExecutionResult:
@@ -20,106 +18,103 @@ class ExecutionResult:
     timed_out: bool = False
 
     @property
-    def succeeded(self) -> bool:
+    def succeeded(self):
         return self.exit_code == 0 and not self.timed_out
 
 
 class CommandExecutor:
-    def __init__(self, default_timeout: int = 120):
+    def __init__(self, default_timeout=120, output_limit=65536):
         self.default_timeout = default_timeout
+        self.output_limit = output_limit
+        self.active = None
 
-    def execute(
-        self,
-        command: str,
-        cwd: Optional[str] = None,
-        timeout: Optional[int] = None,
-        env: Optional[dict] = None
-    ) -> ExecutionResult:
-        """Execute command and capture output."""
-        start_time = time.time()
-        timeout_val = timeout or self.default_timeout
+    def cancel(self):
+        proc = self.active
+        if proc is not None and proc.poll() is None:
+            try:
+                if os.name == "posix":
+                    os.killpg(proc.pid, signal.SIGKILL)
+                else:
+                    proc.kill()
+            except ProcessLookupError:
+                pass
 
+    def execute(self, command, cwd=None, timeout=None, env=None, stream=False):
+        started = time.monotonic()
+        shell = isinstance(command, str)
+        label = command if shell else repr(command)
+        if shell and (os.name != "posix" or not os.path.isfile("/bin/bash")):
+            return ExecutionResult(label, -1, "", "Bash execution requires Linux (or a Linux WSL session).", 0)
         execution_env = os.environ.copy()
+        execution_env.update({"PAGER": "cat", "SYSTEMD_PAGER": "cat", "GIT_PAGER": "cat", "GIT_TERMINAL_PROMPT": "0"})
         if env:
             execution_env.update(env)
+        chunks = {"stdout": [], "stderr": []}
+        counts = {"stdout": 0, "stderr": 0}
+
+        def consume(pipe, name):
+            # Decode incrementally; cap stored output while draining the pipe.
+            import codecs
+            decoder = codecs.getincrementaldecoder("utf-8")("replace")
+            while True:
+                raw = os.read(pipe.fileno(), 4096)
+                if not raw:
+                    break
+                text = decoder.decode(raw)
+                remaining = max(0, self.output_limit - counts[name])
+                chunks[name].append(text[:remaining]) if remaining else None
+                counts[name] += len(text)
+                if stream:
+                    print(terminal_text(text), end="", flush=True)
+            tail = decoder.decode(b"", final=True)
+            if tail and counts[name] < self.output_limit:
+                chunks[name].append(tail)
+            pipe.close()
 
         try:
-            proc = subprocess.run(
-                command,
-                shell=True,
-                executable="/bin/bash",
-                cwd=cwd or os.getcwd(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=timeout_val,
-                env=execution_env
+            proc = subprocess.Popen(
+                command, shell=shell, executable="/bin/bash" if shell else None,
+                cwd=cwd or os.getcwd(), env=execution_env,
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=os.name == "posix",
             )
-            duration = time.time() - start_time
-            return ExecutionResult(
-                command=command,
-                exit_code=proc.returncode,
-                stdout=proc.stdout,
-                stderr=proc.stderr,
-                duration_seconds=duration,
-                timed_out=False
-            )
-        except subprocess.TimeoutExpired as te:
-            duration = time.time() - start_time
-            stdout = te.stdout if isinstance(te.stdout, str) else (te.stdout.decode() if te.stdout else "")
-            stderr = te.stderr if isinstance(te.stderr, str) else (te.stderr.decode() if te.stderr else "")
-            return ExecutionResult(
-                command=command,
-                exit_code=-1,
-                stdout=stdout,
-                stderr=f"Command timed out after {timeout_val} seconds.\n{stderr}",
-                duration_seconds=duration,
-                timed_out=True
-            )
-        except Exception as e:
-            duration = time.time() - start_time
-            return ExecutionResult(
-                command=command,
-                exit_code=-1,
-                stdout="",
-                stderr=f"Execution error: {str(e)}",
-                duration_seconds=duration,
-                timed_out=False
-            )
+            self.active = proc
+            readers = [threading.Thread(target=consume, args=(getattr(proc, name), name), daemon=True) for name in chunks]
+            for reader in readers:
+                reader.start()
+            timed_out = False
+            try:
+                proc.wait(timeout=self.default_timeout if timeout is None else timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                self.cancel()
+                proc.wait()
+            except KeyboardInterrupt:
+                self.cancel()
+                proc.wait()
+                chunks["stderr"].append("\nCancelled by user.")
+            finally:
+                # Kill descendants even when the shell exits leaving background jobs.
+                if os.name == "posix":
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+            for reader in readers:
+                reader.join(timeout=2)
+            if timed_out:
+                chunks["stderr"].append("\nCommand timed out.")
+            for name in chunks:
+                if counts[name] > self.output_limit:
+                    chunks[name].append("\n[Output truncated]")
+            return ExecutionResult(label, -1 if timed_out else proc.returncode,
+                                   "".join(chunks["stdout"]), "".join(chunks["stderr"]),
+                                   time.monotonic() - started, timed_out)
+        except (OSError, ValueError) as exc:
+            return ExecutionResult(label, -1, "", str(exc), time.monotonic() - started)
+        finally:
+            self.active = None
 
-    def execute_interactive(
-        self,
-        command: str,
-        cwd: Optional[str] = None
-    ) -> ExecutionResult:
-        """
-        Execute command with live terminal pass-through (useful for interactive commands
-        like htop, nano, git commit, sudo prompts).
-        """
-        start_time = time.time()
-        try:
-            ret = subprocess.call(
-                command,
-                shell=True,
-                executable="/bin/bash",
-                cwd=cwd or os.getcwd()
-            )
-            duration = time.time() - start_time
-            return ExecutionResult(
-                command=command,
-                exit_code=ret,
-                stdout="",
-                stderr="",
-                duration_seconds=duration,
-                timed_out=False
-            )
-        except Exception as e:
-            duration = time.time() - start_time
-            return ExecutionResult(
-                command=command,
-                exit_code=-1,
-                stdout="",
-                stderr=str(e),
-                duration_seconds=duration,
-                timed_out=False
-            )
+    def execute_interactive(self, command, cwd=None):
+        # Stream output while retaining evidence and enforcing the same timeout.
+        return self.execute(command, cwd=cwd, stream=True)

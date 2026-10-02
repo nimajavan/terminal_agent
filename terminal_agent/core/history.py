@@ -6,9 +6,13 @@ Maintains history for conversational context and logs executed commands.
 import json
 import os
 import time
+import warnings
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from terminal_agent.core.privacy import redact
+from terminal_agent.core.storage import atomic_json
+from terminal_agent.core.session import SessionStore
 
 @dataclass
 class HistoryEntry:
@@ -33,8 +37,7 @@ class HistoryManager:
         if history_dir:
             self.history_dir = Path(history_dir)
         else:
-            xdg_data = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
-            self.history_dir = Path(xdg_data) / "linux-terminal-agent"
+            self.history_dir = SessionStore().directory
 
         self.history_file = self.history_dir / "history.json"
         self._entries: List[HistoryEntry] = []
@@ -56,17 +59,16 @@ class HistoryManager:
             self.history_dir.mkdir(parents=True, exist_ok=True)
             # keep last 500 entries
             data = [e.to_dict() for e in self._entries[-500:]]
-            with open(self.history_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+            atomic_json(self.history_file, redact(data))
+        except (OSError, ValueError) as exc:
+            warnings.warn("Command history could not be saved: " + redact(str(exc)), RuntimeWarning)
 
     def add(self, query: str, command: str, explanation: str, executed: bool, exit_code: Optional[int], provider: str) -> None:
         entry = HistoryEntry(
             timestamp=time.time(),
-            query=query,
-            command=command,
-            explanation=explanation,
+            query=redact(query),
+            command=redact(command),
+            explanation=redact(explanation),
             executed=executed,
             exit_code=exit_code,
             provider=provider
