@@ -18,7 +18,7 @@ from terminal_agent.ui.colors import (
     bold, cyan, green, yellow, red, dim, gray, magenta, set_color_enabled
 )
 
-VERSION = "2.0.1"
+VERSION = "2.0.2"
 
 BANNER = f"""
 {cyan(bold('  _      _____          '))}

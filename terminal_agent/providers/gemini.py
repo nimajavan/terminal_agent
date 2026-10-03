@@ -7,29 +7,14 @@ import os
 import json
 import urllib.request
 import urllib.error
-import datetime
-from email.utils import parsedate_to_datetime
 from typing import List, Dict, Tuple, Optional, Any
 from terminal_agent.providers.base import BaseProvider, AgentResponse, parse_llm_json_response
 from terminal_agent.core.context import SystemContext
 from terminal_agent.core.privacy import redact
-from terminal_agent.providers.errors import TemporaryProviderError
+from terminal_agent.providers.errors import http_failure, network_failure, retry_after_seconds
 from terminal_agent.providers.transport import read_json_response
 
 
-def retry_after_seconds(value):
-    if value is None:
-        return None
-    try:
-        return max(0, float(value))
-    except (ValueError, TypeError):
-        try:
-            date = parsedate_to_datetime(value)
-            if date.tzinfo is None:
-                date = date.replace(tzinfo=datetime.timezone.utc)
-            return max(0, (date - datetime.datetime.now(datetime.timezone.utc)).total_seconds())
-        except (ValueError, TypeError, OverflowError):
-            return None
 
 class GeminiProvider(BaseProvider):
     name = "gemini"
@@ -100,20 +85,9 @@ class GeminiProvider(BaseProvider):
                     raw_response=raw_text
                 )
         except urllib.error.HTTPError as e:
-            try:
-                err_body = e.read(8192).decode("utf-8", errors="ignore")
-                try:
-                    message = json.loads(err_body).get("error", {}).get("message", err_body)
-                except (ValueError, AttributeError):
-                    message = err_body
-                message = redact("Gemini API HTTP %s: %s" % (e.code, message))
-                if e.code in {408, 429, 500, 502, 503, 504}:
-                    raise TemporaryProviderError(message, e.code, retry_after_seconds(e.headers.get("Retry-After"))) from e
-                raise RuntimeError(message) from e
-            finally:
-                e.close()
-        except urllib.error.URLError as e:
-            raise ConnectionError(f"Network error connecting to Gemini: {e.reason}")
+            raise http_failure(self.name, e) from e
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            raise network_failure(self.name, e) from e
 
     def test_connection(self) -> Tuple[bool, str]:
         if not self.api_key:

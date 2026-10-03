@@ -11,7 +11,7 @@ from typing import List, Dict, Tuple, Optional, Any
 from terminal_agent.providers.base import BaseProvider, AgentResponse, parse_llm_json_response
 from terminal_agent.core.context import SystemContext
 from terminal_agent.providers.transport import read_json_response, chat_response_text
-from terminal_agent.core.privacy import redact
+from terminal_agent.providers.errors import http_failure, network_failure
 
 class OpenAIProvider(BaseProvider):
     name = "openai"
@@ -75,13 +75,9 @@ class OpenAIProvider(BaseProvider):
                     raw_response=raw_text
                 )
         except urllib.error.HTTPError as e:
-            try:
-                err_body = redact(e.read(8192).decode("utf-8", errors="replace"))
-                raise RuntimeError(f"{self.name} API HTTP {e.code}: {err_body}") from e
-            finally:
-                e.close()
-        except urllib.error.URLError as e:
-            raise ConnectionError(f"Network error connecting to OpenAI: {e.reason}")
+            raise http_failure(self.name, e) from e
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            raise network_failure(self.name, e) from e
 
     def test_connection(self) -> Tuple[bool, str]:
         if not self.api_key:

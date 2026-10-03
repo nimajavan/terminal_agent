@@ -170,11 +170,39 @@ lta --agent -p gemini -m gemini-3.8-flash "Monitors live network traffic"
 
 ```
 
-Gemini transient HTTP errors (408, 429, 500, 502, 503, 504) receive up to two
-retries with exponential backoff and jitter. Each attempt counts toward the call
-limit and rechecks the cost budget; other HTTP errors are not retried. Short
-`Retry-After` values are honored; waits over 30 seconds return the error for later
-manual retry. Set `gemini.max_retries` to 0 to disable retries (allowed range 0–5).
+All online backends share transient-error handling, including Anthropic's 529
+overload response and temporary network failures. The selected model and provider
+stay unchanged. Defaults allow four retries, within a 120-second recovery window;
+each request timeout is capped to the remaining window. Server waits over 60
+seconds return an actionable error instead of retrying too soon. Each attempt
+counts toward the call limit and rechecks the cost budget.
+
+Capacity retries start at about 2 seconds and double with jitter. A 429 starts at
+10 seconds; `Retry-After` headers and Gemini's structured `RetryInfo.retryDelay`
+take precedence when longer. Daily/zero quota or exhausted billing stops retries;
+authentication, invalid requests and TLS certificate errors are not retried.
+[Google's troubleshooting guide](https://ai.google.dev/gemini-api/docs/troubleshooting)
+explains why backoff helps transient failures while quota issues need account action.
+
+Cooldowns survive REPL restarts and separate CLI runs in the user's data directory.
+State is keyed by a hash of credentials, endpoint and model; it never stores API
+keys. Exhausted transient retries pause further requests for at least 30 seconds;
+hard quota failures pause for at least five minutes, or the longer server hint.
+These controls cannot create provider capacity or increase an account's quota.
+
+```bash
+lta config set max_retries 4
+lta config set gemini.max_retries 4  # override an older saved per-provider value
+lta config set retry_deadline 120
+lta config set retry_max_wait 60
+lta config set provider_cooldown true
+```
+
+`max_retries` accepts 0–5; a per-provider setting overrides it. The deadline accepts
+1–600 seconds and the maximum single wait accepts 1–60. Set retries to 0 to disable
+them. After correcting an account issue, `provider_cooldown false` can deliberately
+bypass saved cooldowns; restore it to true afterward. Configuration changes take
+effect when the REPL restarts.
 Exact requests such as `show open ports` use offline rules when `route_simple` is
 enabled. The running REPL loads configuration on startup; restart after changes.
 

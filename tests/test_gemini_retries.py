@@ -2,6 +2,8 @@
 import io
 import json
 import unittest
+import tempfile
+import os
 from urllib.error import HTTPError
 from unittest.mock import Mock, patch
 from terminal_agent.core.context import get_system_context
@@ -28,6 +30,13 @@ def success():
 
 
 class GeminiRetries(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        environment = patch.dict(os.environ, {"XDG_DATA_HOME": temporary.name})
+        environment.start()
+        self.addCleanup(environment.stop)
+
     def router(self, config=None, retries=2):
         provider = get_provider("gemini", config={"gemini": {"api_key": "fake-gemini-key", "max_retries": retries}})
         return ModelRouter(provider, dict({"route_simple": False}, **(config or {})))

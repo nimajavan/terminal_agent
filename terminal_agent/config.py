@@ -23,6 +23,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "route_simple": True,
     "max_steps": 12,
     "max_model_calls": 20,
+    "max_retries": 4,
+    "retry_deadline": 120,
+    "retry_max_wait": 60,
+    "provider_cooldown": True,
     "max_output_tokens": 2048,
     "budget_usd": None,
     "pricing": {},
@@ -45,8 +49,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "gemini": {
         "api_key": "",
-        "model": "gemini-3.8-flash",
-        "max_retries": 2
+        "model": "gemini-3.8-flash"
     },
     "groq": {
         "api_key": "",
@@ -121,13 +124,18 @@ def validate_config(cfg):
     for key in ("provider", "model", "api_key"):
         if key in cfg and not isinstance(cfg[key], str):
             raise ValueError("%s must be a string" % key)
-    for key in ("auto_execute_safe", "show_explanation", "interactive_mode", "local_only", "route_simple"):
+    for key in ("auto_execute_safe", "show_explanation", "interactive_mode", "local_only", "route_simple", "provider_cooldown"):
         if key in cfg and not isinstance(cfg[key], bool):
             raise ValueError("%s must be true or false" % key)
     for key in ("timeout", "max_steps", "max_model_calls", "max_output_tokens"):
         if key in cfg and (type(cfg[key]) is not int or cfg[key] <= 0):
             raise ValueError("%s must be a positive integer" % key)
     budget = cfg.get("budget_usd")
+    if "max_retries" in cfg and (type(cfg["max_retries"]) is not int or not 0 <= cfg["max_retries"] <= 5):
+        raise ValueError("max_retries must be an integer between 0 and 5")
+    for key, maximum in (("retry_deadline", 600), ("retry_max_wait", 60)):
+        if key in cfg and (type(cfg[key]) not in (int, float) or not math.isfinite(cfg[key]) or not 1 <= cfg[key] <= maximum):
+            raise ValueError("%s must be a number between 1 and %s" % (key, maximum))
     if budget is not None and (type(budget) not in (int, float) or not math.isfinite(budget) or budget <= 0):
         raise ValueError("budget_usd must be a positive number or null")
     for name in ("ollama", "local", "openai", "anthropic", "gemini", "groq", "openrouter", "pricing"):
