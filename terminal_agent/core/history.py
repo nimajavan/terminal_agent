@@ -11,7 +11,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from terminal_agent.core.privacy import redact
-from terminal_agent.core.storage import atomic_json
+from terminal_agent.core.storage import atomic_json, exclusive_lock
 from terminal_agent.core.session import SessionStore
 
 @dataclass
@@ -44,13 +44,20 @@ class HistoryManager:
         self._load()
 
     def _load(self) -> None:
+        self._entries = []
         if not self.history_file.exists():
             return
         try:
             with open(self.history_file, "r", encoding="utf-8") as f:
                 raw = json.load(f)
                 if isinstance(raw, list):
-                    self._entries = [HistoryEntry.from_dict(item) for item in raw if isinstance(item, dict)]
+                    for item in raw:
+                        if not isinstance(item, dict):
+                            continue
+                        try:
+                            self._entries.append(HistoryEntry.from_dict(item))
+                        except TypeError:
+                            continue
         except Exception:
             self._entries = []
 
@@ -73,8 +80,13 @@ class HistoryManager:
             exit_code=exit_code,
             provider=provider
         )
-        self._entries.append(entry)
-        self._save()
+        try:
+            with exclusive_lock(self.history_dir / "history.lock"):
+                self._load()
+                self._entries.append(entry)
+                self._save()
+        except (OSError, ValueError) as exc:
+            warnings.warn("Command history could not be saved: " + redact(str(exc)), RuntimeWarning)
 
     def get_recent(self, limit: int = 10) -> List[HistoryEntry]:
         return self._entries[-limit:]

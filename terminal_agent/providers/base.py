@@ -37,6 +37,8 @@ def parse_llm_json_response(raw_text: str) -> Tuple[str, str]:
     Robustly extract 'command' and 'explanation' from model output,
     handling JSON markdown codeblocks, raw JSON, or plain text fallback.
     """
+    if not isinstance(raw_text, str):
+        raise ValueError("Model response content must be text")
     text = raw_text.strip()
     if not text:
         return "", "No output returned from AI model."
@@ -133,6 +135,8 @@ class BaseProvider(ABC):
 
     def record_usage(self, data):
         usage = data.get("usage", data.get("usageMetadata", {}))
+        if not isinstance(usage, dict):
+            usage = {}
         incoming = usage.get("prompt_tokens", usage.get("input_tokens", usage.get("promptTokenCount", data.get("prompt_eval_count"))))
         outgoing = usage.get("completion_tokens", usage.get("output_tokens", usage.get("candidatesTokenCount", data.get("eval_count"))))
         self.last_usage = {"input_tokens": incoming if type(incoming) is int and incoming >= 0 else None,

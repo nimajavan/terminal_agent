@@ -10,6 +10,8 @@ import urllib.error
 from typing import List, Dict, Tuple, Optional, Any
 from terminal_agent.providers.base import BaseProvider, AgentResponse, parse_llm_json_response
 from terminal_agent.core.context import SystemContext
+from terminal_agent.providers.transport import read_json_response, chat_response_text
+from terminal_agent.core.privacy import redact
 
 class OpenAIProvider(BaseProvider):
     name = "openai"
@@ -60,12 +62,9 @@ class OpenAIProvider(BaseProvider):
 
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
-                res_data = json.loads(response.read().decode("utf-8"))
+                res_data = read_json_response(response)
                 self.record_usage(res_data)
-                choices = res_data.get("choices", [])
-                if not choices:
-                    raise ValueError("No response choices returned by OpenAI API.")
-                raw_text = choices[0].get("message", {}).get("content", "")
+                raw_text = chat_response_text(res_data)
                 cmd, exp = parse_llm_json_response(raw_text)
                 return AgentResponse(
                     command=cmd,
@@ -76,8 +75,11 @@ class OpenAIProvider(BaseProvider):
                     raw_response=raw_text
                 )
         except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"OpenAI API HTTP {e.code}: {err_body}")
+            try:
+                err_body = redact(e.read(8192).decode("utf-8", errors="replace"))
+                raise RuntimeError(f"{self.name} API HTTP {e.code}: {err_body}") from e
+            finally:
+                e.close()
         except urllib.error.URLError as e:
             raise ConnectionError(f"Network error connecting to OpenAI: {e.reason}")
 
@@ -92,6 +94,7 @@ class OpenAIProvider(BaseProvider):
                     return True, f"OpenAI API connected successfully. Using model: {self.model}"
                 return False, f"Unexpected response code: {response.status}"
         except urllib.error.HTTPError as e:
+            e.close()
             return False, f"OpenAI Authentication failed (HTTP {e.code})"
         except Exception as e:
             return False, f"Connection test failed: {str(e)}"

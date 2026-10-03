@@ -51,6 +51,8 @@ def validate_action(action):
         raise ValueError("Invalid arguments for %s" % tool)
     if any(isinstance(v, str) and len(v) > 256000 for v in args.values()):
         raise ValueError("Tool argument too large")
+    if tool == "write_file" and len(args["content"].encode("utf-8")) > 256000:
+        raise ValueError("File content must be at most 256 KB encoded as UTF-8")
     if tool == "service":
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}", args["name"]):
             raise ValueError("Invalid service name")

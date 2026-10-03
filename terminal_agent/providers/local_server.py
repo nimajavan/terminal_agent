@@ -7,7 +7,8 @@ Zero third-party dependencies (pure standard library urllib).
 import json
 import urllib.request
 import urllib.error
-from terminal_agent.providers.transport import local_open
+from terminal_agent.providers.transport import local_open, read_json_response, chat_response_text
+from terminal_agent.core.privacy import redact
 from typing import List, Dict, Tuple, Optional, Any
 from terminal_agent.providers.base import BaseProvider, AgentResponse, parse_llm_json_response
 from terminal_agent.core.context import SystemContext
@@ -58,12 +59,9 @@ class LocalServerProvider(BaseProvider):
 
         try:
             with local_open(req, timeout=self.timeout) as response:
-                res_data = json.loads(response.read().decode("utf-8"))
+                res_data = read_json_response(response)
                 self.record_usage(res_data)
-                choices = res_data.get("choices", [])
-                if not choices:
-                    raise ValueError("No response choices returned by local server.")
-                raw_text = choices[0].get("message", {}).get("content", "")
+                raw_text = chat_response_text(res_data)
                 cmd, exp = parse_llm_json_response(raw_text)
                 return AgentResponse(
                     command=cmd,
@@ -73,6 +71,12 @@ class LocalServerProvider(BaseProvider):
                     confidence=0.9,
                     raw_response=raw_text
                 )
+        except urllib.error.HTTPError as e:
+            try:
+                message = redact(e.read(8192).decode("utf-8", "replace"))
+                raise RuntimeError("Local server HTTP %s: %s" % (e.code, message)) from e
+            finally:
+                e.close()
         except urllib.error.URLError as e:
             raise ConnectionError(
                 f"Failed to connect to local server at {self.endpoint}.\n"

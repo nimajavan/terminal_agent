@@ -98,7 +98,18 @@ class AgentWorkflow:
             current = self.store.load(session["id"])
             if current["updated"] != session["updated"]:
                 raise ValueError("Session changed since it was loaded; resume it again")
-            return self._run(session, retry)
+            try:
+                return self._run(session, retry)
+            except (KeyboardInterrupt, EOFError):
+                session["status"] = "interrupted"
+                session["cwd"] = str(self.tools.cwd)
+                session["usage"] = self.router.records
+                for record in session["results"]:
+                    if record["status"] == "running":
+                        record["status"] = "interrupted"
+                session["summary"] = "Execution interrupted. Inspect evidence before explicitly using --retry or --replan."
+                self.store.save(session)
+                raise
 
     def _run(self, session, retry=False):
         validate_plan(session["plan"], self.config.get("max_steps", 12))

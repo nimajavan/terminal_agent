@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "linux-terminal-agent"
-version = "2.0.0"
+version = "2.0.1"
 description = "Natural Language to Linux Terminal Automation with Modular AI Backends"
 readme = "README.md"
 requires-python = ">=3.8"

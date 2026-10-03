@@ -7,7 +7,7 @@ Zero third-party dependencies (pure standard library urllib).
 import json
 import urllib.request
 import urllib.error
-from terminal_agent.providers.transport import local_open
+from terminal_agent.providers.transport import local_open, read_json_response
 from terminal_agent.core.planning import plan_json_schema
 from typing import List, Dict, Tuple, Optional, Any
 from terminal_agent.providers.base import BaseProvider, AgentResponse, parse_llm_json_response
@@ -58,7 +58,7 @@ class OllamaProvider(BaseProvider):
 
         try:
             with local_open(req, timeout=self.timeout) as response:
-                res_data = json.loads(response.read().decode("utf-8"))
+                res_data = read_json_response(response)
                 self.record_usage(res_data)
                 raw_response = res_data.get("response", "")
                 cmd, exp = parse_llm_json_response(raw_response)

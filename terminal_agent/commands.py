@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import copy
 from pathlib import Path
 from terminal_agent.config import load_config
 from terminal_agent.core.planning import parse_plan
@@ -23,7 +24,7 @@ def common(parser):
     parser.add_argument("--local-only", action="store_true")
 
 
-def handle_workflow_command(argv):
+def handle_workflow_command(argv, config=None):
     parser = argparse.ArgumentParser(prog="lta " + argv[0])
     command = argv[0]
     common(parser)
@@ -56,7 +57,7 @@ def handle_workflow_command(argv):
     elif command == "evaluate":
         parser.add_argument("--output")
     args = parser.parse_args(argv[1:])
-    cfg = load_config()
+    cfg = copy.deepcopy(config) if config is not None else load_config()
     if args.local_only:
         cfg["local_only"] = True
     project = Path(args.project).resolve()

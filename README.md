@@ -140,6 +140,12 @@ See [plan and skill format](docs/PLAN_SCHEMA.md).
 Providers: `ollama`, `local` (OpenAI-compatible), `rule_based`, `openai`, `groq`,
 `anthropic`, `gemini`, `openrouter`. Set a model supported by your chosen endpoint;
 packaged defaults are examples, not an assertion of current vendor availability.
+The Gemini default is `gemini-3.8-flash`, listed in the
+[official model catalog](https://ai.google.dev/gemini-api/docs/models).
+The Claude default is `claude-sonnet-4-6`, the replacement documented in
+[Anthropic's retirement schedule](https://platform.claude.com/docs/en/about-claude/model-deprecations).
+Existing saved model overrides are preserved; update `gemini.model` or
+`anthropic.model` explicitly if your configuration points to a retired model.
 
 ```bash
 lta config set provider ollama
@@ -151,10 +157,15 @@ lta config set max_steps 12
 lta config set max_model_calls 20
 lta config set route_simple false
 lta test ollama
-example:
-export OPENAI_API_KEY="sk-eowsivov"
-export GEMINI_API_KEY="sAQ.Ab8RN6Jx-R-bOc1GCXnVQDGz1kKkS2hG-OG5tssuYNA6l1-ssa"
-lta --agent -p openai -m gpt-6-astra "Monitors live network traffic"
+```
+
+Cloud example (use your own credentials and supported model):
+
+```bash
+lta config set local_only false
+export OPENAI_API_KEY="YOUR_OPENAI_API_KEY"
+export GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
+lta --agent -p openai -m YOUR_OPENAI_MODEL "Monitors live network traffic"
 lta --agent -p gemini -m gemini-3.8-flash "Monitors live network traffic"
 
 ```
@@ -199,6 +210,10 @@ Run `lta` for the REPL. Commands include `agent <goal>`, `sessions`, `resume`,
 a dependency-free terminal dashboard; text remains usable without ANSI color.
 Persian strings are stored as UTF-8; visual right-to-left shaping depends on your
 terminal. This is a line-oriented interface, not a full-screen terminal emulator.
+Interactive `resume` preserves the current dry-run, approval and model settings.
+Ctrl+C stops the workflow and journals the interrupted step; continuing that step
+requires an explicit `--retry` or `--replan`. File limits count UTF-8 bytes so
+accepted edits remain readable and restorable, including Persian text.
 
 ## Validation
 

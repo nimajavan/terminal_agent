@@ -18,7 +18,7 @@ from terminal_agent.ui.colors import (
     bold, cyan, green, yellow, red, dim, gray, magenta, set_color_enabled
 )
 
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 
 BANNER = f"""
 {cyan(bold('  _      _____          '))}
@@ -72,7 +72,7 @@ def handle_config_command(sub_args: List[str]) -> None:
     print(red(f"Unknown config action: {action}. Use 'list', 'get', 'set', or 'init'."))
 
 
-def handle_test_command(cfg: dict, provider_name: Optional[str] = None) -> None:
+def handle_test_command(cfg: dict, provider_name: Optional[str] = None) -> int:
     """Test connectivity to AI provider."""
     print(bold("\nTesting AI Provider Connectivity..."))
     provider = get_provider(name=provider_name, config=cfg)
@@ -84,6 +84,7 @@ def handle_test_command(cfg: dict, provider_name: Optional[str] = None) -> None:
         print(green(f"✔ Success: {message}"))
     else:
         print(red(f"✖ Failed: {message}"))
+    return 0 if ok else 1
 
 
 def handle_info_command(cfg: dict) -> None:
@@ -194,7 +195,12 @@ def run_interactive_repl(engine: TerminalAgentEngine) -> None:
         if user_input.lower() in {"sessions", "resume"}:
             from terminal_agent.commands import handle_workflow_command
             try:
-                handle_workflow_command([user_input.lower()])
+                workflow_args = [user_input.lower(), "-p", engine.provider.name, "-m", engine.provider.model]
+                if engine.dry_run:
+                    workflow_args.append("--dry-run")
+                if engine.auto_yes:
+                    workflow_args.append("--yes")
+                handle_workflow_command(workflow_args, config=engine.config)
             except (ValueError, OSError, RuntimeError) as exc:
                 print(red(terminal_text(exc)))
             continue
@@ -219,7 +225,7 @@ def _main():
             handle_config_command(sys.argv[2:])
         elif cmd == "test":
             prov = sys.argv[2] if len(sys.argv) > 2 else None
-            handle_test_command(cfg, prov)
+            return handle_test_command(cfg, prov)
         elif cmd == "info":
             handle_info_command(cfg)
         elif cmd == "history":
@@ -257,6 +263,8 @@ def _main():
     cfg = load_config()
     if args.local_only:
         cfg["local_only"] = True
+    from pathlib import Path
+    args.project = str(Path(args.project).resolve())
     os.chdir(args.project)
 
     user_prompt = " ".join(args.prompt).strip()

@@ -1,5 +1,5 @@
 """
-Google Gemini Online Provider (Gemini 1.5 Flash, Gemini 1.5 Pro).
+Google Gemini online provider using the generateContent API.
 Pure standard library implementation.
 """
 
@@ -14,6 +14,7 @@ from terminal_agent.providers.base import BaseProvider, AgentResponse, parse_llm
 from terminal_agent.core.context import SystemContext
 from terminal_agent.core.privacy import redact
 from terminal_agent.providers.errors import TemporaryProviderError
+from terminal_agent.providers.transport import read_json_response
 
 
 def retry_after_seconds(value):
@@ -34,7 +35,7 @@ class GeminiProvider(BaseProvider):
     name = "gemini"
     is_offline = False
 
-    def __init__(self, model: str = "gemini-1.5-flash", config: Optional[Dict[str, Any]] = None):
+    def __init__(self, model: str = "gemini-3.8-flash", config: Optional[Dict[str, Any]] = None):
         super().__init__(model=model, config=config)
         self.api_key = self.config.get("api_key") or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
         self.timeout = self.config.get("timeout", 45)
@@ -77,12 +78,17 @@ class GeminiProvider(BaseProvider):
 
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
-                res_data = json.loads(response.read().decode("utf-8"))
+                res_data = read_json_response(response)
                 self.record_usage(res_data)
                 candidates = res_data.get("candidates", [])
-                if not candidates:
+                if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], dict):
                     raise ValueError("No response returned from Gemini API.")
-                parts = candidates[0].get("content", {}).get("parts", [])
+                content = candidates[0].get("content")
+                if not isinstance(content, dict):
+                    raise ValueError("Gemini response content must be an object")
+                parts = content.get("parts")
+                if not isinstance(parts, list) or any(not isinstance(p, dict) or not isinstance(p.get("text", ""), str) for p in parts):
+                    raise ValueError("Gemini response parts must contain text")
                 raw_text = "".join(p.get("text", "") for p in parts)
                 cmd, exp = parse_llm_json_response(raw_text)
                 return AgentResponse(

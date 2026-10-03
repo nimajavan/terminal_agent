@@ -32,8 +32,8 @@ DEFAULT_MODELS: Dict[str, str] = {
     "local": "default",
     "rule_based": "builtin-rules",
     "openai": "gpt-4o-mini",
-    "anthropic": "claude-3-5-sonnet-20241022",
-    "gemini": "gemini-1.5-flash",
+    "anthropic": "claude-sonnet-4-6",
+    "gemini": "gemini-3.8-flash",
     "groq": "llama-3.3-70b-versatile",
     "openrouter": "meta-llama/llama-3.3-70b-instruct",
 }

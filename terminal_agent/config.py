@@ -41,11 +41,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "anthropic": {
         "api_key": "",
-        "model": "claude-3-5-sonnet-20241022"
+        "model": "claude-sonnet-4-6"
     },
     "gemini": {
         "api_key": "",
-        "model": "gemini-1.5-flash",
+        "model": "gemini-3.8-flash",
         "max_retries": 2
     },
     "groq": {

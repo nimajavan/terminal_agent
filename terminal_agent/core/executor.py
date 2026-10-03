@@ -83,6 +83,7 @@ class CommandExecutor:
             for reader in readers:
                 reader.start()
             timed_out = False
+            interrupted = False
             try:
                 proc.wait(timeout=self.default_timeout if timeout is None else timeout)
             except subprocess.TimeoutExpired:
@@ -90,9 +91,9 @@ class CommandExecutor:
                 self.cancel()
                 proc.wait()
             except KeyboardInterrupt:
+                interrupted = True
                 self.cancel()
                 proc.wait()
-                chunks["stderr"].append("\nCancelled by user.")
             finally:
                 # Kill descendants even when the shell exits leaving background jobs.
                 if os.name == "posix":
@@ -102,6 +103,8 @@ class CommandExecutor:
                         pass
             for reader in readers:
                 reader.join(timeout=2)
+            if interrupted:
+                raise KeyboardInterrupt
             if timed_out:
                 chunks["stderr"].append("\nCommand timed out.")
             for name in chunks:
