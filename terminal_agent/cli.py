@@ -20,12 +20,21 @@ from terminal_agent.ui.colors import (
 
 VERSION = "3.0.0"
 
+# Keep backslashes outside f-string expressions for Python 3.8-3.11 parsers.
+_LOGO = tuple(cyan(bold(line)) for line in (
+    '  _      _____          ',
+    ' | |    |_   _|   /\\    ',
+    ' | |      | |    /  \\   ',
+    ' | |___  _| |_  / /\\ \\  ',
+    ' |_____||_____|/_/  \\_\\ ',
+))
+
 BANNER = f"""
-{cyan(bold('  _      _____          '))}
-{cyan(bold(' | |    |_   _|   /\\    '))}  {bold('Linux Terminal Agent')} {dim(f'v{VERSION}')}
-{cyan(bold(' | |      | |    /  \\   '))}  {green('Natural Language → Linux Shell Automation')}
-{cyan(bold(' | |___  _| |_  / /\\ \\  '))}  {dim('Modular AI Engine (Online & Offline)')}
-{cyan(bold(' |_____||_____|/_/  \\_\\ '))}
+{_LOGO[0]}
+{_LOGO[1]}  {bold('Linux Terminal Agent')} {dim(f'v{VERSION}')}
+{_LOGO[2]}  {green('Natural Language → Linux Shell Automation')}
+{_LOGO[3]}  {dim('Modular AI Engine (Online & Offline)')}
+{_LOGO[4]}
 """
 
 def print_banner():
