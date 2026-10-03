@@ -18,7 +18,7 @@ from terminal_agent.ui.colors import (
     bold, cyan, green, yellow, red, dim, gray, magenta, set_color_enabled
 )
 
-VERSION = "2.0.2"
+VERSION = "3.0.0"
 
 BANNER = f"""
 {cyan(bold('  _      _____          '))}
@@ -213,6 +213,9 @@ def _main():
     for output in (sys.stdout, sys.stderr):
         if hasattr(output, "reconfigure"):
             output.reconfigure(encoding="utf-8", errors="replace")
+    if len(sys.argv) > 1 and sys.argv[1] in {"ops", "deploy"}:
+        from terminal_agent.deployment.cli import main as operations_main
+        return operations_main((["deploy"] if sys.argv[1] == "deploy" else []) + sys.argv[2:])
     from terminal_agent.commands import handle_workflow_command
     if len(sys.argv) > 1 and sys.argv[1] in {"skills", "sessions", "resume", "run-plan", "export-plan", "rollback", "doctor", "evaluate"}:
         return handle_workflow_command(sys.argv[1:])
@@ -234,7 +237,8 @@ def _main():
 
     parser = argparse.ArgumentParser(
         prog="lta",
-        description="Linux Terminal Agent - Convert natural language prompts into Linux shell commands."
+        description="Linux Terminal Agent - Convert natural language prompts into Linux shell commands.",
+        epilog="Deployment and server operations: lta ops --help or lta deploy --help."
     )
 
     parser.add_argument("prompt", nargs="*", help="Natural language instruction for the terminal.")

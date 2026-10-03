@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "demo",
+  "domain": "demo.example.com",
+  "runtime": "static",
+  "port": 80,
+  "health": {"path": "/", "contains": "LTA deployment example"},
+  "resources": {"memory_mb": 128, "cpus": 1},
+  "monitor": {"interval": 60, "restart": false}
+}

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "linux-terminal-agent"
-version = "2.0.2"
+version = "3.0.0"
 description = "Natural Language to Linux Terminal Automation with Modular AI Backends"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -20,6 +20,9 @@ classifiers = [
 [project.scripts]
 lta = "terminal_agent.cli:main"
 terminal-agent = "terminal_agent.cli:main"
+
+[project.optional-dependencies]
+yaml = ["PyYAML>=6.0"]
 
 [tool.setuptools.packages.find]
 include = ["terminal_agent*"]

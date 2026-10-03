@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "web",
+  "domain": "web.example.com",
+  "runtime": "node",
+  "port": 3000,
+  "build": {"command": ["npm", "run", "build"]},
+  "start": ["npm", "start"],
+  "test": ["npm", "test"],
+  "environment": {"NODE_ENV": "production", "HOSTNAME": "0.0.0.0"},
+  "health": {"path": "/health", "contains": "ok"}
+}
