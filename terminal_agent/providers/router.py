@@ -2,10 +2,14 @@
 import json
 import math
 import time
+from time import sleep as retry_sleep
+import random
+import sys
 from terminal_agent.providers.rule_based import RuleBasedProvider
-from terminal_agent.core.privacy import redact
+from terminal_agent.core.privacy import redact, terminal_text
+from terminal_agent.providers.errors import TemporaryProviderError
 
-SIMPLE = {"show disk usage", "disk usage", "disk space", "فضای دیسک", "show free memory", "free memory", "مصرف رم", "cpu info", "مشخصات پردازنده", "git status", "وضعیت گیت", "open ports"}
+SIMPLE = {"show disk usage", "disk usage", "disk space", "فضای دیسک", "show free memory", "free memory", "مصرف رم", "cpu info", "مشخصات پردازنده", "git status", "وضعیت گیت", "open ports", "show open ports", "list open ports", "show listening ports", "list listening ports"}
 
 
 class ModelRouter:
@@ -14,7 +18,7 @@ class ModelRouter:
         self.config = config
         self.records = records if records is not None else []
 
-    def generate(self, prompt, context, history=None, planning=False, reviewing=False):
+    def generate(self, prompt, context, history=None, planning=False, reviewing=False, _attempt=0):
         provider = self.provider
         if not reviewing and self.config.get("route_simple", True) and prompt.strip().lower() in SIMPLE:
             provider = RuleBasedProvider()
@@ -50,6 +54,7 @@ class ModelRouter:
         self.records.append(record)
         started = time.monotonic()
         provider.last_usage = {}
+        temporary_error = None
         try:
             if reviewing:
                 result = provider.review_evidence(clean_prompt, clean_context, clean_history, self.config.get("max_steps", 12))
@@ -59,6 +64,10 @@ class ModelRouter:
                 result = provider.generate(clean_prompt, clean_context, clean_history)
             record["status"] = "completed"
             return result
+        except TemporaryProviderError as exc:
+            record["status"] = "failed"
+            record["http_status"] = exc.status
+            temporary_error = exc
         except Exception:
             record["status"] = "failed"
             raise
@@ -68,6 +77,19 @@ class ModelRouter:
             record.update(usage)
             if not local and price and all(type(usage.get(k)) is int for k in ("input_tokens", "output_tokens")):
                 record["cost_usd"] = (usage["input_tokens"] * price["input"] + usage["output_tokens"] * price["output"]) / 1000000
+        # Each retry is a separate accounted call; recursion rechecks both caps.
+        if temporary_error is not None:
+            retries = provider.config.get("max_retries", 2)
+            if _attempt >= retries or len(self.records) >= self.config.get("max_model_calls", 20):
+                raise temporary_error
+            delay = min(8, 2 ** _attempt) + random.uniform(0, 0.5)
+            if temporary_error.retry_after is not None:
+                if not math.isfinite(temporary_error.retry_after) or temporary_error.retry_after > 30:
+                    raise temporary_error
+                delay = max(delay, temporary_error.retry_after)
+            print(terminal_text("%s HTTP %s: retry %s/%s in %.1fs" % (provider.name, temporary_error.status, _attempt + 1, retries, delay)), file=sys.stderr)
+            retry_sleep(delay)
+            return self.generate(prompt, context, history, planning, reviewing, _attempt + 1)
 
     def summary(self):
         known = sum(r.get("cost_usd") or 0 for r in self.records)

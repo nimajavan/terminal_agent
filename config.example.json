@@ -24,7 +24,8 @@
   },
   "gemini": {
     "api_key": "",
-    "model": "gemini-1.5-flash"
+    "model": "gemini-1.5-flash",
+    "max_retries": 2
   },
   "groq": {
     "api_key": "",

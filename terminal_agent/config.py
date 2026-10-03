@@ -45,7 +45,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "gemini": {
         "api_key": "",
-        "model": "gemini-1.5-flash"
+        "model": "gemini-1.5-flash",
+        "max_retries": 2
     },
     "groq": {
         "api_key": "",
@@ -139,3 +140,5 @@ def validate_config(cfg):
                     raise ValueError("%s.%s must be a string" % (name, key))
             if "timeout" in section and (type(section["timeout"]) is not int or section["timeout"] <= 0):
                 raise ValueError("%s.timeout must be a positive integer" % name)
+            if "max_retries" in section and (type(section["max_retries"]) is not int or not 0 <= section["max_retries"] <= 5):
+                raise ValueError("%s.max_retries must be an integer between 0 and 5" % name)

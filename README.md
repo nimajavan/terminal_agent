@@ -151,6 +151,14 @@ lta --agent -p gemini -m gemini-3.8-flash "Monitors live network traffic"
 
 ```
 
+Gemini transient HTTP errors (408, 429, 500, 502, 503, 504) receive up to two
+retries with exponential backoff and jitter. Each attempt counts toward the call
+limit and rechecks the cost budget; other HTTP errors are not retried. Short
+`Retry-After` values are honored; waits over 30 seconds return the error for later
+manual retry. Set `gemini.max_retries` to 0 to disable retries (allowed range 0–5).
+Exact requests such as `show open ports` use offline rules when `route_simple` is
+enabled. The running REPL loads configuration on startup; restart after changes.
+
 API keys can use `OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`,
 `GEMINI_API_KEY`/`GOOGLE_API_KEY`, or `OPENROUTER_API_KEY`. Cloud use is rejected
 while `local_only` is true. There is no automatic local-to-cloud failover.
