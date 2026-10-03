@@ -74,6 +74,13 @@ can access everything your account can access after approval. The policy does no
 prove arbitrary code safe; use a disposable environment for untrusted workloads.
 Regex/allowlist checks and secret redaction are not comprehensive security boundaries.
 
+Ollama planning uses schema-constrained JSON output. Model-generated step labels
+can be normalized when their dependencies are unambiguous; ambiguous references
+remain rejected. Other schema failures receive one accounted correction request.
+Manual plan imports stay strict and action/verification policy is unchanged.
+Exact `monitor live network traffic` requests use the built-in 10-second interface
+sampler when `route_simple` is enabled. Compound requests still use the model.
+
 ## Sessions and recovery
 
 ```bash
@@ -111,13 +118,14 @@ Local model transport ignores proxy environment variables and refuses redirects.
 
 ## Skills
 
-Built-in packs: `git`, `docker`, `network`, `systemd`, `nginx`.
+Built-in packs: `git`, `docker`, `network`, `traffic`, `systemd`, `nginx`.
 
 ```bash
 lta skills list
 lta skills run git -y
 lta skills run systemd --service ssh
 lta skills run network --dry-run
+lta skills run traffic -y        # live RX/TX interface rates for 10 seconds
 lta skills install examples/config-repair.skill.json
 lta skills run config-repair --project /path/to/demo
 ```

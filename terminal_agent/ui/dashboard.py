@@ -19,10 +19,10 @@ def show_plan(plan, session=None):
                 print("     verify %s: exit=%s, stdout contains %s" % (check["tool"], check.get("expected_exit", 0), terminal_text(repr(check.get("contains", "")))))
 
 
-def show_result(result, status):
+def show_result(result, status, show_output=True):
     color = green if status == "passed" else red
     print(color("[%s] exit=%s | %.2fs" % (status.upper(), result.exit_code, result.duration_seconds)))
-    if result.stdout:
+    if result.stdout and show_output:
         print(terminal_text(result.stdout))
     if result.stderr:
         print(red(terminal_text(result.stderr)))

@@ -8,9 +8,11 @@ import json
 import urllib.request
 import urllib.error
 from terminal_agent.providers.transport import local_open
+from terminal_agent.core.planning import plan_json_schema
 from typing import List, Dict, Tuple, Optional, Any
 from terminal_agent.providers.base import BaseProvider, AgentResponse, parse_llm_json_response
 from terminal_agent.core.context import SystemContext
+from terminal_agent.core.privacy import redact
 
 class OllamaProvider(BaseProvider):
     name = "ollama"
@@ -40,7 +42,7 @@ class OllamaProvider(BaseProvider):
             "model": self.model,
             "prompt": full_prompt,
             "stream": False,
-            "format": "json",
+            "format": plan_json_schema(self._plan_step_limit) if self._planning else "json",
             "options": {
                 "temperature": 0.1,
                 "num_predict": self.config.get("max_output_tokens", 2048),
@@ -68,6 +70,12 @@ class OllamaProvider(BaseProvider):
                     confidence=0.95,
                     raw_response=raw_response
                 )
+        except urllib.error.HTTPError as e:
+            try:
+                message = redact(e.read(8192).decode("utf-8", "replace"))
+                raise RuntimeError("Ollama HTTP %s: %s" % (e.code, message)) from e
+            finally:
+                e.close()
         except urllib.error.URLError as e:
             raise ConnectionError(
                 f"Failed to connect to local Ollama at {self.host}.\n"

@@ -158,7 +158,7 @@ class AgentWorkflow:
             record["result"] = redact(asdict(result))
             record["backup_id"] = self.tools.last_backup
             ok = result.exit_code in step["accept_exit_codes"] and not result.timed_out
-            show_result(result, "passed" if ok else "failed")
+            show_result(result, "passed" if ok else "failed", show_output=action["tool"] != "network_traffic" or not self.tools.stream)
             if ok:
                 for check in step["verify"]:
                     check_action = {"tool": check["tool"], "args": copy.deepcopy(check["args"])}
@@ -174,7 +174,7 @@ class AgentWorkflow:
                     checked = self.tools.run(check_action)
                     matches = checked.exit_code == check.get("expected_exit", 0) and not checked.timed_out and check.get("contains", "") in checked.stdout
                     record["checks"].append({"status": "passed" if matches else "failed", "result": redact(asdict(checked))})
-                    show_result(checked, "passed" if matches else "failed")
+                    show_result(checked, "passed" if matches else "failed", show_output=check_action["tool"] != "network_traffic" or not self.tools.stream)
                     if not matches:
                         ok = False
                         break

@@ -7,6 +7,7 @@ import re
 import stat
 import tempfile
 import time
+from time import sleep as network_wait
 import uuid
 import urllib.request
 import urllib.error
@@ -25,6 +26,7 @@ TOOLS = {
     "service": {"name": str, "action": str},
     "http_check": {"url": str},
     "inspect": {"kind": str},
+    "network_traffic": {"seconds": int, "interval": int},
 }
 INSPECTIONS = {
     "git_status": ["git", "-c", "core.fsmonitor=false", "--no-optional-locks", "--no-pager", "status", "--short"],
@@ -45,9 +47,9 @@ def validate_action(action):
     if not isinstance(tool, str) or tool not in TOOLS or not isinstance(args, dict):
         raise ValueError("Unknown tool or invalid arguments")
     schema = TOOLS[tool]
-    if set(args) != set(schema) or any(not isinstance(args[k], t) for k, t in schema.items()):
+    if set(args) != set(schema) or any(type(args[k]) is not t for k, t in schema.items()):
         raise ValueError("Invalid arguments for %s" % tool)
-    if any(len(v) > 256000 for v in args.values()):
+    if any(isinstance(v, str) and len(v) > 256000 for v in args.values()):
         raise ValueError("Tool argument too large")
     if tool == "service":
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}", args["name"]):
@@ -56,6 +58,8 @@ def validate_action(action):
             raise ValueError("Invalid service action")
     if tool == "inspect" and args["kind"] not in INSPECTIONS:
         raise ValueError("Unknown inspection kind")
+    if tool == "network_traffic" and (not 1 <= args["seconds"] <= 60 or not 1 <= args["interval"] <= min(10, args["seconds"])):
+        raise ValueError("Traffic sampling requires seconds 1..60 and interval 1..10, no greater than seconds")
     if tool == "http_check":
         url = urlparse(args["url"])
         if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password:
@@ -67,6 +71,25 @@ def validate_action(action):
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def read_network_counters():
+    """Linux interface counters, not packet contents or privileged capture."""
+    source = Path("/proc/net/dev")
+    if not source.is_file():
+        raise ValueError("Live traffic sampling requires Linux /proc/net/dev (run inside Linux/WSL)")
+    counters = {}
+    for line in source.read_text(encoding="utf-8").splitlines():
+        if ":" not in line:
+            continue
+        name, fields = line.rsplit(":", 1)
+        values = fields.split()
+        if len(values) < 16:
+            continue
+        counters[name.strip()] = (int(values[0]), int(values[8]))
+    if not counters:
+        raise ValueError("No interface counters are available")
+    return counters
 
 
 class ToolRunner:
@@ -144,6 +167,41 @@ class ToolRunner:
             if os.path.exists(tmp):
                 os.unlink(tmp)
 
+    def monitor_traffic(self, seconds, interval):
+        if seconds > self.executor.default_timeout:
+            raise ValueError("Traffic duration exceeds configured timeout")
+        previous = read_network_counters()
+        started = last = time.monotonic()
+        output = ["Time  Interface  RX KiB/s  TX KiB/s\n"]
+        retained = len(output[0])
+        if self.stream:
+            print(output[0], end="", flush=True)
+        while True:
+            remaining = seconds - (time.monotonic() - started)
+            if remaining <= 0:
+                break
+            network_wait(min(interval, remaining))
+            now = time.monotonic()
+            current = read_network_counters()
+            elapsed = max(now - last, 0.000001)
+            lines = []
+            for name in sorted(current):
+                before = previous.get(name, current[name])
+                rx = max(0, current[name][0] - before[0]) / elapsed / 1024
+                tx = max(0, current[name][1] - before[1]) / elapsed / 1024
+                lines.append("%.1fs  %s  %.2f  %.2f\n" % (now - started, name, rx, tx))
+            frame = "".join(lines)
+            if self.stream:
+                from terminal_agent.core.privacy import terminal_text
+                print(terminal_text(frame), end="", flush=True)
+            if retained < self.executor.output_limit:
+                output.append(frame[:self.executor.output_limit - retained])
+            retained += len(frame)
+            previous, last = current, now
+        if retained > self.executor.output_limit:
+            output.append("[Output truncated]\n")
+        return "".join(output)
+
     def run(self, action):
         validate_action(action)
         self.last_backup = None
@@ -164,6 +222,9 @@ class ToolRunner:
                 return self.executor.execute(argv, cwd=str(self.cwd), stream=self.stream)
             if tool == "inspect":
                 return self.executor.execute(INSPECTIONS[args["kind"]], cwd=str(self.cwd), stream=self.stream)
+            if tool == "network_traffic":
+                output = self.monitor_traffic(args["seconds"], args["interval"])
+                return ExecutionResult(tool, 0, output, "", time.monotonic() - start)
             if tool == "http_check":
                 class NoRedirect(urllib.request.HTTPRedirectHandler):
                     def redirect_request(self, *unused):

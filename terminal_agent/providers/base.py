@@ -104,7 +104,11 @@ class BaseProvider(ABC):
 
     def generate_plan(self, prompt, context, history=None, max_steps=12):
         from terminal_agent.core.planning import parse_plan
+        from terminal_agent.providers.errors import InvalidModelPlan
         if self.name == "rule_based":
+            from terminal_agent.core.skills import TRAFFIC_REQUESTS, SkillRegistry
+            if prompt.strip().lower() in TRAFFIC_REQUESTS:
+                return SkillRegistry().plan("traffic")
             response = self.generate(prompt, context, history)
             if not response.command:
                 raise ValueError("Offline rules cannot plan this request; use a built-in skill or configure a model")
@@ -117,9 +121,13 @@ class BaseProvider(ABC):
                 dict(id="inspect", title=response.explanation, **action)
             ]}), max_steps)
         self._planning = True
+        self._plan_step_limit = max_steps
         try:
             response = self.generate(prompt + "\nMaximum steps: " + str(max_steps), context, history)
-            return parse_plan(response.raw_response, max_steps)
+            try:
+                return parse_plan(response.raw_response, max_steps, generated=True)
+            except ValueError as exc:
+                raise InvalidModelPlan(str(exc), response.raw_response) from exc
         finally:
             self._planning = False
 
@@ -131,10 +139,12 @@ class BaseProvider(ABC):
                            "output_tokens": outgoing if type(outgoing) is int and outgoing >= 0 else None}
 
     def review_evidence(self, prompt, context, history=None, max_steps=12):
-        from terminal_agent.core.planning import validate_plan
+        from terminal_agent.core.planning import validate_plan, normalize_generated_ids
+        from terminal_agent.providers.errors import InvalidModelPlan
         if self.name == "rule_based":
             raise ValueError("Adaptive evidence review requires a language model")
         self._reviewing = True
+        response = None
         try:
             response = self.generate(prompt, context, history)
             raw = response.raw_response.strip()
@@ -146,8 +156,12 @@ class BaseProvider(ABC):
             if review["goal_met"] and review["next_plan"] is not None:
                 raise ValueError("A completed review cannot propose another plan")
             if review["next_plan"] is not None:
-                validate_plan(review["next_plan"], max_steps)
+                review["next_plan"] = validate_plan(normalize_generated_ids(review["next_plan"], max_steps), max_steps)
             return review
+        except ValueError as exc:
+            if response is None:
+                raise
+            raise InvalidModelPlan(str(exc), response.raw_response) from exc
         finally:
             self._reviewing = False
 

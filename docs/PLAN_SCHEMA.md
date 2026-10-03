@@ -5,6 +5,14 @@ Plans are JSON objects containing `goal`, optional `summary`, and 1–12 `steps`
 unique `id`, `title`, `tool`, and `args`. Optional fields are `depends_on` (earlier
 IDs only), `accept_exit_codes` (default `[0]`) and `verify` (default `[]`).
 
+Model-generated labels are normalized when the mapping is unambiguous: numeric,
+missing, malformed or unreferenced duplicate IDs receive unique string labels.
+Dependencies referencing repeated IDs, unknown IDs, themselves or future steps
+remain invalid. Only labels/references change; actions and verification requirements
+do not. Imported/manual plans remain strict. An invalid model response receives
+at most one schema-correction request, subject to model call and cost limits.
+Ollama planning requests include a JSON schema in `format`.
+
 Every modifying tool or unrecognized shell action needs an explicit verification.
 Each verification has `tool`, `args`, optional `expected_exit` (default `0`) and
 optional `contains` (a case-sensitive literal required in stdout). All checks must
@@ -27,6 +35,11 @@ Supported actions (exact argument keys):
 - `inspect`: `kind` string, one of `git_status`, `git_diff`, `git_log`,
   `docker_containers`, `docker_resources`, `nginx_config`. Uses fixed argv.
   Nginx validation asks for review because it can open configured log files.
+- `network_traffic`: integer `seconds` (1–60) and `interval` (1–10, no greater
+  than `seconds`). Samples Linux `/proc/net/dev` interface counters and prints
+  receive/transmit rates in KiB/s. Duration cannot exceed the configured timeout.
+  No packet contents are captured and no package or sudo is needed. Stops after
+  the selected duration; Ctrl+C interrupts earlier.
 
 ```json
 {

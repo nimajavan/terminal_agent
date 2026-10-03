@@ -6,12 +6,16 @@ from pathlib import Path
 from terminal_agent.core.storage import atomic_json, data_root
 from terminal_agent.core.planning import validate_plan
 
+TRAFFIC_REQUESTS = {"monitor live network traffic", "monitors live network traffic", "monitor network traffic", "show live network traffic", "نمایش ترافیک شبکه", "ترافیک زنده شبکه"}
+
 
 def step(identity, title, tool, args, **extra):
     return dict(id=identity, title=title, tool=tool, args=args, **extra)
 
 
 BUILTINS = {
+    "traffic": {"description": "Sample live interface RX/TX rates for 10 seconds", "steps": [
+        step("monitor", "Monitor network throughput", "network_traffic", {"seconds": 10, "interval": 1})]},
     "git": {"description": "Inspect working tree, recent changes and commits", "steps": [
         step("status", "Working tree", "inspect", {"kind": "git_status"}),
         step("diff", "Uncommitted changes", "inspect", {"kind": "git_diff"}),

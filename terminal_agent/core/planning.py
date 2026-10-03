@@ -1,16 +1,21 @@
 """Strict, bounded plans; dependencies can only refer to earlier steps."""
 import json
 import re
+import copy
 from terminal_agent.core.tools import validate_action
 from terminal_agent.core.safety import analyze_command
 
 PLAN_INSTRUCTION = '''Return ONLY a JSON object with goal (string), summary (string), steps (array).
 Each step has id (short identifier), title, tool, args, depends_on (array of earlier step IDs),
 accept_exit_codes (array, default [0]), and verify (array, default []).
+IDs must be unique strings matching [A-Za-z0-9_-]{1,48}, e.g. step_1 and step_2.
+Never use numeric IDs, repeat an ID, or reference a later step in depends_on.
 Available tools and exact args:
 shell {command: string}; read_file {path: string}; write_file {path: string, content: string};
 change_directory {path: string}; service {name: string, action: status|show|logs|is-active|is-enabled|start|stop|restart|reload|enable|disable};
 http_check {url: string}; inspect {kind: git_status|git_diff|git_log|docker_containers|docker_resources|nginx_config}.
+network_traffic {seconds: integer 1..60, interval: integer 1..10 (no greater than seconds)}.
+For live network throughput use network_traffic: it samples interface RX/TX counters, needs no extra package, and ends after the requested duration. It does not inspect packet contents.
 Each verification has tool, args, expected_exit (integer, default 0), contains (optional string).
 Use inspection first, explicit dependencies, then minimal changes with outcome verification.
 File tools are limited to the project directory. Prefer explicit tools to arbitrary shell.
@@ -23,7 +28,7 @@ If evidence is missing, plan diagnosis only. The user can replan using its resul
 '''
 
 
-def parse_plan(text, max_steps=12):
+def parse_plan(text, max_steps=12, generated=False):
     text = text.strip()
     if text.startswith("```"):
         match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, re.S)
@@ -32,7 +37,96 @@ def parse_plan(text, max_steps=12):
         text = match.group(1)
     if len(text) > 300000:
         raise ValueError("Plan is too large")
-    return validate_plan(json.loads(text), max_steps)
+    plan = json.loads(text)
+    if generated:
+        plan = normalize_generated_ids(plan, max_steps)
+    return validate_plan(plan, max_steps)
+
+
+def normalize_generated_ids(plan, max_steps=12):
+    """Repair labels only. Ambiguous/forward dependencies are never guessed."""
+    if not isinstance(plan, dict) or not isinstance(plan.get("steps"), list) or not 1 <= len(plan["steps"]) <= max_steps:
+        raise ValueError("Invalid generated plan steps")
+    plan = copy.deepcopy(plan)
+    steps = plan["steps"]
+    occurrences = {}
+    reserved = set()
+
+    def key(value):
+        if type(value) not in (str, int):
+            raise ValueError("Step labels and dependencies must be strings or integers")
+        return (type(value).__name__, value)
+
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict):
+            raise ValueError("Invalid step schema")
+        raw = step.get("id")
+        if raw is not None:
+            occurrences.setdefault(key(raw), []).append(index)
+        if isinstance(raw, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,48}", raw):
+            reserved.add(raw)
+    replacements = {}
+    for index, step in enumerate(steps):
+        raw = step.get("id")
+        if isinstance(raw, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,48}", raw) and len(occurrences[key(raw)]) == 1:
+            label = raw
+        else:
+            label = "step_%s" % (index + 1)
+            while label in reserved:
+                label = "_" + label
+            reserved.add(label)
+        replacements[index] = label
+    for index, step in enumerate(steps):
+        dependencies = step.get("depends_on", [])
+        if not isinstance(dependencies, list):
+            raise ValueError("Dependencies must be a list")
+        mapped = []
+        for dependency in dependencies:
+            matches = occurrences.get(key(dependency), [])
+            if len(matches) != 1:
+                raise ValueError("Unknown or ambiguous step dependency")
+            if matches[0] >= index:
+                raise ValueError("Dependencies must reference earlier steps")
+            mapped.append(replacements[matches[0]])
+        step["id"] = replacements[index]
+        step["depends_on"] = mapped
+    return plan
+
+
+def plan_json_schema(max_steps=12):
+    """Ollama structured output constrains shape; runtime policy remains authoritative."""
+    from terminal_agent.core.tools import TOOLS, SERVICE_READ, SERVICE_WRITE, INSPECTIONS
+
+    def actions(verification=False):
+        branches = []
+        for tool, fields in TOOLS.items():
+            if verification and tool in {"write_file", "change_directory"}:
+                continue
+            args = {name: {"type": "integer" if kind is int else "string"} for name, kind in fields.items()}
+            if tool == "service":
+                args["action"]["enum"] = sorted(SERVICE_READ if verification else SERVICE_READ | SERVICE_WRITE)
+            if tool == "inspect":
+                args["kind"]["enum"] = sorted(INSPECTIONS)
+            if tool == "network_traffic":
+                args["seconds"].update(minimum=1, maximum=60)
+                args["interval"].update(minimum=1, maximum=10)
+            properties = {"tool": {"const": tool}, "args": {"type": "object", "properties": args, "required": list(fields), "additionalProperties": False}}
+            required = ["tool", "args"]
+            if verification:
+                properties.update(expected_exit={"type": "integer"}, contains={"type": "string"})
+            else:
+                properties.update(id={"type": "string", "pattern": "^[A-Za-z0-9_-]{1,48}$"}, title={"type": "string", "minLength": 1},
+                                  depends_on={"type": "array", "items": {"type": "string"}, "uniqueItems": True},
+                                  accept_exit_codes={"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 0, "maximum": 255}},
+                                  verify={"type": "array", "maxItems": 5, "items": {"$ref": "#/$defs/verification"}})
+                required += ["id", "title"]
+            branches.append({"type": "object", "properties": properties, "required": required, "additionalProperties": False})
+        return branches
+
+    return {"type": "object", "properties": {"goal": {"type": "string", "minLength": 1}, "summary": {"type": "string"},
+            "steps": {"type": "array", "minItems": 1, "maxItems": max_steps, "items": {"oneOf": actions()}}},
+            "required": ["goal", "steps"], "additionalProperties": False,
+            "$defs": {"verification": {"oneOf": actions(True)}}}
 
 
 def validate_plan(plan, max_steps=12):
