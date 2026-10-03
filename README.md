@@ -143,6 +143,9 @@ lta config set max_steps 12
 lta config set max_model_calls 20
 lta config set route_simple false
 lta test ollama
+example:
+lta --agent -p openai -m gpt-6-astra "Monitors live network traffic"
+lta --agent -p gemini -m gemini-3.8-flash "Monitors live network traffic"
 ```
 
 API keys can use `OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`,
