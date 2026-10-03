@@ -144,8 +144,11 @@ lta config set max_model_calls 20
 lta config set route_simple false
 lta test ollama
 example:
+export OPENAI_API_KEY="sk-eowsivov"
+export GEMINI_API_KEY="sAQ.Ab8RN6Jx-R-bOc1GCXnVQDGz1kKkS2hG-OG5tssuYNA6l1-ssa"
 lta --agent -p openai -m gpt-6-astra "Monitors live network traffic"
 lta --agent -p gemini -m gemini-3.8-flash "Monitors live network traffic"
+
 ```
 
 API keys can use `OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`,
