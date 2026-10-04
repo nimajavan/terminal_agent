@@ -4,12 +4,6 @@ A dependency-free Python assistant for Linux: inspect a problem, review a plan,
 execute bounded tools, and verify observable outcomes. English and Persian prompts
 are supported by the model providers and common offline rules.
 
-Version 3 adds deterministic project deployment and server operations: SSH profiles,
-Docker releases, HTTPS, health-gated traffic switching, rollback, durable jobs,
-PostgreSQL/Redis/volume backups, scoped repair and a private dashboard. This path
-does not call an AI provider. Start with `lta ops --help` and the
-[deployment guide](docs/DEPLOYMENT.md) ([فارسی](docs/DEPLOYMENT_FA.md)).
-
 ## Install
 
 Python 3.8+ and Linux/Bash are required for shell execution. Windows can run the

@@ -38,9 +38,7 @@ class TempCase(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        # Windows CI may expose TEMP through an 8.3 alias (RUNNER~1).
-        # Production paths are canonicalized, so compare canonical fixture paths too.
-        self.base = Path(self.temp.name).resolve()
+        self.base = Path(self.temp.name)
         self.project = self.base / "project"
         self.project.mkdir()
         self.env = patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.base / "config"), "XDG_DATA_HOME": str(self.base / "data")})

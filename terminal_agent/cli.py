@@ -18,23 +18,14 @@ from terminal_agent.ui.colors import (
     bold, cyan, green, yellow, red, dim, gray, magenta, set_color_enabled
 )
 
-VERSION = "3.0.0"
-
-# Keep backslashes outside f-string expressions for Python 3.8-3.11 parsers.
-_LOGO = tuple(cyan(bold(line)) for line in (
-    '  _      _____          ',
-    ' | |    |_   _|   /\\    ',
-    ' | |      | |    /  \\   ',
-    ' | |___  _| |_  / /\\ \\  ',
-    ' |_____||_____|/_/  \\_\\ ',
-))
+VERSION = "2.0.2"
 
 BANNER = f"""
-{_LOGO[0]}
-{_LOGO[1]}  {bold('Linux Terminal Agent')} {dim(f'v{VERSION}')}
-{_LOGO[2]}  {green('Natural Language → Linux Shell Automation')}
-{_LOGO[3]}  {dim('Modular AI Engine (Online & Offline)')}
-{_LOGO[4]}
+{cyan(bold('  _      _____          '))}
+{cyan(bold(' | |    |_   _|   /\\    '))}  {bold('Linux Terminal Agent')} {dim(f'v{VERSION}')}
+{cyan(bold(' | |      | |    /  \\   '))}  {green('Natural Language → Linux Shell Automation')}
+{cyan(bold(' | |___  _| |_  / /\\ \\  '))}  {dim('Modular AI Engine (Online & Offline)')}
+{cyan(bold(' |_____||_____|/_/  \\_\\ '))}
 """
 
 def print_banner():
@@ -222,9 +213,6 @@ def _main():
     for output in (sys.stdout, sys.stderr):
         if hasattr(output, "reconfigure"):
             output.reconfigure(encoding="utf-8", errors="replace")
-    if len(sys.argv) > 1 and sys.argv[1] in {"ops", "deploy"}:
-        from terminal_agent.deployment.cli import main as operations_main
-        return operations_main((["deploy"] if sys.argv[1] == "deploy" else []) + sys.argv[2:])
     from terminal_agent.commands import handle_workflow_command
     if len(sys.argv) > 1 and sys.argv[1] in {"skills", "sessions", "resume", "run-plan", "export-plan", "rollback", "doctor", "evaluate"}:
         return handle_workflow_command(sys.argv[1:])
@@ -246,8 +234,7 @@ def _main():
 
     parser = argparse.ArgumentParser(
         prog="lta",
-        description="Linux Terminal Agent - Convert natural language prompts into Linux shell commands.",
-        epilog="Deployment and server operations: lta ops --help or lta deploy --help."
+        description="Linux Terminal Agent - Convert natural language prompts into Linux shell commands."
     )
 
     parser.add_argument("prompt", nargs="*", help="Natural language instruction for the terminal.")
